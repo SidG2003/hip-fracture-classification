@@ -8,6 +8,7 @@ dist/
 .env
 data/
 Anatomy Dataset/
+from-net/
 models/
 runs/
 *.pt
