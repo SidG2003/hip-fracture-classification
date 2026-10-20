@@ -33,6 +33,31 @@ Git. Their usual locations and formats are ignored.
 
 ## Input data
 
+### Download KAUH-HipFx from Kaggle
+
+If Kaggle ZIP generation fails with "No gcs url found", use the public
+individual-file API without installing a Kaggle client:
+
+```bash
+python scripts/download_kauh.py --output data/kauh-hipfx
+```
+
+The script pins dataset version 1, paginates the file listing, downloads with
+four workers, verifies listed byte counts, and records local SHA-256 fingerprints.
+Reruns reuse existing files with matching sizes and retry incomplete downloads.
+The listing does not supply authoritative checksums, so these local fingerprints
+are not independent integrity verification. Do not run simultaneous downloads to
+the same output directory.
+
+Dataset: https://www.kaggle.com/datasets/mohammadaminalqasem/kauh-hipfx
+
+Version 1 lists 768 images: 234 intertrochanteric fractures, 234 neck-of-femur
+fractures, and 300 normal images. The publisher specifies CC BY-NC-ND 4.0 and
+requests citation of https://doi.org/10.1007/s10278-026-02395-z. Full publisher
+metadata is saved with the download. This command only downloads; it does not
+create splits or start training. The current classifier supports two classes,
+so training all three categories requires a separate implementation change.
+
 Put images and a CSV manifest under ignored `data/`. The manifest has exactly two
 columns, in this order:
 
