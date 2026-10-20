@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from PIL import Image
+import numpy as np
 
 from hip_fracture.data import check_disjoint, load_manifest, split_manifest
 
@@ -53,6 +54,11 @@ class DataTests(unittest.TestCase):
             load_manifest(self.manifest, self.classes)
         (self.root / "0.png").unlink()
         with self.assertRaises(FileNotFoundError):
+            load_manifest(self.manifest, self.classes)
+
+    def test_high_bit_depth_is_not_silently_clipped(self):
+        Image.fromarray(np.full((32, 32), 4096, dtype=np.uint16)).save(self.root / "0.png")
+        with self.assertRaisesRegex(ValueError, "8-bit"):
             load_manifest(self.manifest, self.classes)
 
     def test_reproducible_disjoint_splits(self):

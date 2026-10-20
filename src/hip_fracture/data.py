@@ -37,6 +37,7 @@ def load_manifest(path: Path, classes: list[str]) -> list[Sample]:
             if image_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}:
                 raise ValueError(f"{image_path}: unsupported format; export de-identified raster images first.")
             with Image.open(image_path) as image:
+                check_image_format(image, image_path)
                 image.verify()
             with image_path.open("rb") as image_file:
                 digest = hashlib.file_digest(image_file, "sha256").hexdigest()
@@ -104,6 +105,12 @@ def split_manifest(
     return splits
 
 
+def check_image_format(image: Image.Image, path: Path) -> None:
+    if image.mode not in {"1", "L", "P", "RGB", "RGBA"} or getattr(image, "n_frames", 1) != 1:
+        raise ValueError(f"{path}: export a single-frame 8-bit grayscale/RGB image with expert-approved windowing.")
+
+
 def load_rgb(path: Path) -> Image.Image:
     with Image.open(path) as image:
+        check_image_format(image, path)
         return ImageOps.exif_transpose(image).convert("RGB")
