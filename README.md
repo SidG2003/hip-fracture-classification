@@ -61,6 +61,29 @@ hip-fracture validate \
 
 ## Reproducible splits
 
+### Chest-versus-pelvis anatomy trial
+
+For the Mendeley dataset "A Multi-Class X-ray Image Dataset for Human Anatomy
+Classification", place the extracted folders under ignored `Anatomy Dataset/`.
+Prepare only Chest and Pelvis, retaining one copy of each byte-identical image:
+
+```bash
+python scripts/prepare_anatomy.py --dataset "Anatomy Dataset" --output data/anatomy
+hip-fracture split --manifest data/anatomy/manifest.csv \
+  --classes Chest Pelvis --output data/anatomy/splits --seed 2025
+```
+
+The preparation script never changes the original images. It writes a validated
+two-column manifest, `excluded_duplicates.csv` mapping excluded copies to retained
+images, and `preparation.json` with counts and limitations. Conflicting labels for
+identical images fail explicitly. Exact deduplication cannot establish patient
+independence or remove re-encoded/near-duplicate images.
+
+Use these manifests and `--classes Chest Pelvis` with the training command below,
+using a separate run such as `runs/anatomy-001`. This is an anatomy-classification
+engineering check, not evidence of fracture-subtype performance. Check the
+dataset's original terms and citation before redistributing data or results.
+
 If your teammate supplies independent train/validation/test manifests, use them
 directly. Otherwise, create class-stratified image-level splits:
 
