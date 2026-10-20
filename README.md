@@ -1,9 +1,10 @@
 # Hip-fracture classification
 
-Research pilot: distinguish **two expert-confirmed fracture classes** with a
-frozen SKELEX encoder and a trainable linear head. This is not a fracture detector,
-does not handle normal hips or the other fracture classes, and is not validated
-for clinical use or treatment decisions.
+Research classifier with a frozen SKELEX encoder and a trainable linear head.
+Supports two or more mutually exclusive configured labels, including the
+three-class KAUH-HipFx experiment (two fracture types plus Normal).
+Not validated for clinical use or treatment decisions. A checkpoint can only
+predict its configured labels and does not reject unrelated images.
 
 ## Setup
 
@@ -21,13 +22,14 @@ Git. Their usual locations and formats are ignored.
 
 ## Pilot assumptions
 
-- Exactly two expert-confirmed fracture classes; pass their actual names through
+- At least two expert-confirmed classes; pass their actual names through
   `--classes`. `type_a` and `type_b` below are placeholders, not clinical labels.
 - **One image per unique patient across the whole dataset.** The data provider
   must verify this. No patient ID, study ID, view, or label-status field is required.
 - Each selected image must show enough information to support its assigned label.
 - Training, validation, and test images must be independent. An image from any
-  other fracture category or a normal hip is outside this pilot's scope.
+  unconfigured category is outside the checkpoint's scope; Normal is supported
+  only if explicitly included in training.
 - Document population/exclusion criteria with your expert before interpreting
   results. A successful two-class pilot does not establish six-class performance.
 
@@ -55,8 +57,35 @@ Version 1 lists 768 images: 234 intertrochanteric fractures, 234 neck-of-femur
 fractures, and 300 normal images. The publisher specifies CC BY-NC-ND 4.0 and
 requests citation of https://doi.org/10.1007/s10278-026-02395-z. Full publisher
 metadata is saved with the download. This command only downloads; it does not
-create splits or start training. The current classifier supports two classes,
-so training all three categories requires a separate implementation change.
+create splits or start training.
+
+Prepare all three categories using their original folder names (the source
+folder spells intertrochanteric as `Intertrochantric`):
+
+```bash
+python scripts/prepare_anatomy.py \
+  --dataset data/kauh-hipfx/Dataset --output data/kauh-prepared \
+  --classes "Intertrochantric fracture" "Neck of femur fracture" Normal
+hip-fracture split --manifest data/kauh-prepared/manifest.csv \
+  --classes "Intertrochantric fracture" "Neck of femur fracture" Normal \
+  --output data/kauh-prepared/splits --seed 2025
+hip-fracture train \
+  --train data/kauh-prepared/splits/train.csv \
+  --val data/kauh-prepared/splits/val.csv \
+  --classes "Intertrochantric fracture" "Neck of femur fracture" Normal \
+  --model ../SKELEX/models/SKELEX --output runs/kauh-001 \
+  --epochs 20 --batch-size 4 --lr 0.001 --device auto
+hip-fracture evaluate --checkpoint runs/kauh-001/best.pt \
+  --manifest data/kauh-prepared/splits/test.csv \
+  --output runs/kauh-001/test --device auto
+```
+
+The preparation utility works for any configured class folders, leaves originals
+unchanged, and records excluded exact duplicates. All preparation manifests and
+splits are generated locally, not supplied by Kaggle. The publisher describes
+one selected view per patient; filename/content checks cannot independently
+verify this or exclude near-duplicates. Image-level splits here are newly
+generated and are not the paper's original evaluation protocol.
 
 Put images and a CSV manifest under ignored `data/`. The manifest has exactly two
 columns, in this order:
@@ -121,7 +150,7 @@ hip-fracture split \
 ```
 
 Defaults are approximately 60% train, 20% validation, 20% test, subject to
-rounding. Every split must contain both classes; inadequate class counts fail
+rounding. Every split must contain all configured classes; inadequate class counts fail
 explicitly. These fractions are engineering defaults, not a sample-size
 recommendation. Generated manifests contain absolute image paths, so regenerate
 or update them if you move the dataset. Existing output directories are never
@@ -150,15 +179,17 @@ The encoder:
   Decoder-only unused-weight notices from Transformers are expected.
 - Disables MAE masking and random patch shuffling, retaining all image patches.
 - Stays frozen and in evaluation mode, including during head training.
-- Supplies its CLS-token feature vector to a new two-output linear head.
+- Supplies its CLS-token feature vector to a new linear head with one output per class.
 
-Only **2,050 parameters** are trained for the downloaded 1,024-dimensional SKELEX
-encoder. The reconstruction decoder is not used. No augmentation or encoder
+Only **2,050 parameters for two classes**, or **3,075 for three classes**, are
+trained for the downloaded 1,024-dimensional SKELEX encoder.
+The reconstruction decoder is not used. No augmentation or encoder
 fine-tuning is included in this first baseline.
 
 `--device auto` selects CUDA, then Apple MPS, then CPU if available. Requesting an
 unavailable device fails rather than falling back silently. Local validation is
-on CPU; GPU/MPS execution and cross-platform determinism are not certified.
+on CPU, with real-image training also exercised on Apple MPS. CUDA and
+cross-platform determinism are not certified.
 The encoder is recomputed each batch; large datasets may need GPU resources or a
 later feature-caching step. Benchmark before committing to long runs.
 
@@ -188,8 +219,9 @@ hip-fracture evaluate \
 ```
 
 Writes `metrics.json` and `predictions.csv`. Reports per-class precision, recall,
-F1 and support; macro-F1; accuracy/balanced accuracy; AUROC treating class 1 as
-positive; and a confusion matrix with explicit class order. Prediction CSV
+F1 and support; macro-F1; accuracy/balanced accuracy; and a confusion matrix with
+explicit class order. Binary AUROC treats class 1 as positive (`auroc_class_1`);
+multiclass AUROC is macro one-vs-rest (`auroc_macro_ovr`). Prediction CSV
 probability columns follow that class order. Rejects byte-identical overlap with
 training/validation data. No confidence intervals or external validation are
 implemented yet.
@@ -203,9 +235,10 @@ hip-fracture predict \
   --device cpu
 ```
 
-Returns the predicted pilot class and both probabilities. These are not
-calibrated clinical confidence scores. The model always chooses one of the two
-classes and has **no normal/other/uncertain rejection mechanism**.
+Returns the predicted class and a probability for every configured class. These
+are not calibrated clinical confidence scores. The model always chooses one of
+its trained classes and has **no other/uncertain rejection mechanism**.
+Normal is a trained category only for checkpoints that explicitly include it.
 
 Evaluation/prediction require the original backbone directory. If you move it,
 pass `--model /new/path/to/SKELEX`; weight SHA-256, encoder settings, and

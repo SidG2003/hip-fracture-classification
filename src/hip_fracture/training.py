@@ -75,19 +75,29 @@ class ImageDataset(Dataset):
 
 
 def metrics_for(labels: np.ndarray, probabilities: np.ndarray, classes: list[str]) -> dict:
-    if probabilities.shape != (len(labels), 2) or not np.isfinite(probabilities).all():
-        raise ValueError("Expected finite two-class probabilities for every image.")
+    validate_classes(classes)
+    indices = list(range(len(classes)))
+    if probabilities.shape != (len(labels), len(classes)) or not np.isfinite(probabilities).all():
+        raise ValueError("Expected finite probabilities for every image and configured class.")
+    if set(labels.tolist()) != set(indices):
+        raise ValueError("Metrics require examples of every configured class.")
+    if np.any(probabilities < 0) or np.any(probabilities > 1) or not np.allclose(probabilities.sum(axis=1), 1):
+        raise ValueError("Class probabilities must be between zero and one and sum to one.")
     predictions = probabilities.argmax(axis=1)
     precision, recall, f1, support = precision_recall_fscore_support(
-        labels, predictions, labels=[0, 1], zero_division=0,
+        labels, predictions, labels=indices, zero_division=0,
     )
     return {
         "accuracy": float(accuracy_score(labels, predictions)),
         "balanced_accuracy": float(balanced_accuracy_score(labels, predictions)),
         "macro_f1": float(np.mean(f1)),
-        "auroc_class_1": float(roc_auc_score(labels, probabilities[:, 1])),
+        **(
+            {"auroc_class_1": float(roc_auc_score(labels, probabilities[:, 1]))}
+            if len(classes) == 2 else
+            {"auroc_macro_ovr": float(roc_auc_score(labels, probabilities, multi_class="ovr", average="macro", labels=indices))}
+        ),
         "class_order": classes,
-        "confusion_matrix_rows_true_columns_predicted": confusion_matrix(labels, predictions, labels=[0, 1]).tolist(),
+        "confusion_matrix_rows_true_columns_predicted": confusion_matrix(labels, predictions, labels=indices).tolist(),
         "per_class": {
             name: {"precision": float(precision[i]), "recall": float(recall[i]),
                    "f1": float(f1[i]), "support": int(support[i])}
@@ -134,7 +144,7 @@ def train(config: TrainConfig) -> Path:
     val_samples = load_manifest(config.val_manifest, config.classes)
     check_disjoint(train_samples, val_samples)
     digest = weight_digest(config.model)
-    model, processor = load_pretrained(config.model)
+    model, processor = load_pretrained(config.model, len(config.classes))
     model.to(device)
     generator = torch.Generator().manual_seed(config.seed)
     train_loader = DataLoader(
@@ -201,7 +211,7 @@ def load_checkpoint(
     directory = model_override if model_override is not None else Path(checkpoint["model_path"])
     if weight_digest(directory) != checkpoint["model_sha256"]:
         raise ValueError("Backbone weights do not match the training checkpoint SHA-256.")
-    model, processor = load_pretrained(directory)
+    model, processor = load_pretrained(directory, len(checkpoint["classes"]))
     if encoder_settings(model) != checkpoint["encoder_config"]:
         raise ValueError("Encoder configuration differs from the training checkpoint.")
     if processor.to_dict() != checkpoint["processor"]:
@@ -231,7 +241,7 @@ def evaluate(
     save_json(output / "metrics.json", metrics)
     with (output / "predictions.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)
-        writer.writerow(["image_path", "true_label", "predicted_label", "prob_class_0", "prob_class_1"])
+        writer.writerow(["image_path", "true_label", "predicted_label", *[f"prob_class_{i}" for i in range(len(classes))]])
         for sample, probs in zip(samples, probabilities, strict=True):
             writer.writerow([str(sample.path), sample.label, classes[int(probs.argmax())], *probs.tolist()])
     return metrics
@@ -251,5 +261,5 @@ def predict(
     return {
         "predicted_label": classes[int(np.argmax(probs))],
         "probabilities": dict(zip(classes, probs, strict=True)),
-        "scope": "Research only: assumes one of the two pilot fracture classes is present.",
+        "scope": "Research only: assumes the image belongs to one of the checkpoint's configured classes; no out-of-distribution rejection.",
     }

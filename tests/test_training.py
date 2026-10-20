@@ -53,11 +53,19 @@ class TrainingTests(unittest.TestCase):
         self.assertEqual(stored["val_metrics"]["loss"], min(row["val"]["loss"] for row in history))
         self.assertEqual(set(stored["head_state"]), {"weight", "bias"})
         model, _, _ = load_checkpoint(checkpoint, torch.device("cpu"))
-        self.assertEqual(model.head.out_features, 2)
+        self.assertEqual(model.head.out_features, len(self.classes))
         metrics = evaluate(checkpoint, self.splits / "test.csv", self.root / "evaluation", device_name="cpu")
         self.assertEqual(metrics["class_order"], self.classes)
-        self.assertEqual(sum(row["support"] for row in metrics["per_class"].values()), 4)
-        self.assertTrue((self.root / "evaluation" / "predictions.csv").is_file())
+        self.assertEqual(
+            sum(row["support"] for row in metrics["per_class"].values()),
+            len(load_manifest(self.splits / "test.csv", self.classes)),
+        )
+        with (self.root / "evaluation" / "predictions.csv").open() as stream:
+            rows = list(csv.DictReader(stream))
+        self.assertEqual(set(rows[0]), {
+            "image_path", "true_label", "predicted_label",
+            *[f"prob_class_{i}" for i in range(len(self.classes))],
+        })
         image = load_manifest(self.splits / "test.csv", self.classes)[0].path
         first = predict(checkpoint, image, device_name="cpu")
         second = predict(checkpoint, image, device_name="cpu")
@@ -101,3 +109,38 @@ class TrainingTests(unittest.TestCase):
             optimizer.step()
         self.assertLess(loss.item(), 0.01)
         self.assertTrue(torch.equal(model.head(features).argmax(dim=1), targets))
+
+
+class MulticlassTrainingTests(TrainingTests):
+    def setUp(self):
+        super().setUp()
+        self.classes = ["intertrochanteric", "femoral_neck", "normal"]
+        manifest = self.root / "three.csv"
+        with manifest.open("w", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(["image_path", "label"])
+            for i in range(30):
+                image = self.root / f"three{i}.png"
+                Image.new("RGB", (32, 32), (20 + i, 30 + 80 * (i % 3), 100)).save(image)
+                writer.writerow([image.name, self.classes[i % 3]])
+        self.splits = self.root / "three_splits"
+        split_manifest(manifest, self.splits, self.classes)
+        self.config = TrainConfig(
+            train_manifest=self.splits / "train.csv", val_manifest=self.splits / "val.csv",
+            model=self.model_path, output=self.root / "three_run", classes=self.classes,
+            epochs=3, batch_size=4, learning_rate=0.01, device="cpu",
+        )
+
+    def test_metrics_have_known_values(self):
+        labels = np.array([0, 1, 2, 0, 1, 2])
+        probabilities = np.full((6, 3), 0.1)
+        probabilities[np.arange(6), labels] = 0.8
+        metrics = metrics_for(labels, probabilities, self.classes)
+        self.assertEqual(metrics["macro_f1"], 1)
+        self.assertEqual(metrics["auroc_macro_ovr"], 1)
+        self.assertNotIn("auroc_class_1", metrics)
+        self.assertEqual(metrics["confusion_matrix_rows_true_columns_predicted"], [[2, 0, 0], [0, 2, 0], [0, 0, 2]])
+        with self.assertRaisesRegex(ValueError, "every configured class"):
+            metrics_for(labels[:2], probabilities[:2], self.classes)
+        with self.assertRaisesRegex(ValueError, "sum to one"):
+            metrics_for(labels, probabilities / 2, self.classes)

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hip-fracture-classification"
 version = "0.1.0"
-description = "Research pilot for two-class hip-fracture classification with a frozen SKELEX encoder."
+description = "Research image classification with a frozen SKELEX encoder."
 requires-python = ">=3.11"
 dependencies = [
     "numpy==2.4.6",

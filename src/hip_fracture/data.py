@@ -18,8 +18,8 @@ class Sample:
 
 
 def validate_classes(classes: list[str]) -> None:
-    if len(classes) != 2 or len(set(classes)) != 2 or any(not c.strip() for c in classes):
-        raise ValueError("Supply exactly two distinct, non-empty class names.")
+    if len(classes) < 2 or len(set(classes)) != len(classes) or any(not c.strip() for c in classes):
+        raise ValueError("Supply at least two distinct, non-empty class names.")
 
 
 def load_manifest(path: Path, classes: list[str]) -> list[Sample]:
@@ -46,7 +46,7 @@ def load_manifest(path: Path, classes: list[str]) -> list[Sample]:
             seen[digest] = image_path
             samples.append(Sample(image_path, row["label"], digest))
     if set(s.label for s in samples) != set(classes):
-        raise ValueError(f"{path}: both pilot classes must be represented.")
+        raise ValueError(f"{path}: all configured classes must be represented.")
     return samples
 
 

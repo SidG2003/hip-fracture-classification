@@ -10,13 +10,15 @@ from transformers.image_processing_utils import BaseImageProcessor
 
 
 class FrozenClassifier(nn.Module):
-    def __init__(self, encoder: ViTMAEModel):
+    def __init__(self, encoder: ViTMAEModel, num_classes: int = 2):
         super().__init__()
+        if num_classes < 2:
+            raise ValueError("Classifier requires at least two classes.")
         self.encoder = encoder
         self.encoder.config.mask_ratio = 0.0
         self.encoder.requires_grad_(False)
         self.encoder.eval()
-        self.head = nn.Linear(encoder.config.hidden_size, 2)
+        self.head = nn.Linear(encoder.config.hidden_size, num_classes)
 
     def train(self, mode: bool = True):
         super().train(mode)
@@ -39,7 +41,7 @@ def weight_digest(directory: Path) -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def load_pretrained(directory: Path) -> tuple[FrozenClassifier, BaseImageProcessor]:
+def load_pretrained(directory: Path, num_classes: int = 2) -> tuple[FrozenClassifier, BaseImageProcessor]:
     directory = directory.resolve(strict=True)
     encoder, info = ViTMAEModel.from_pretrained(
         directory, local_files_only=True, output_loading_info=True,
@@ -50,4 +52,4 @@ def load_pretrained(directory: Path) -> tuple[FrozenClassifier, BaseImageProcess
     if unexpected:
         raise RuntimeError(f"Unexpected non-decoder weights in checkpoint: {unexpected}")
     processor = AutoImageProcessor.from_pretrained(directory, local_files_only=True)
-    return FrozenClassifier(encoder), processor
+    return FrozenClassifier(encoder, num_classes), processor

@@ -8,13 +8,17 @@ from pathlib import Path
 
 from PIL import Image
 
-from hip_fracture.data import Sample, check_image_format, class_counts, load_manifest, write_manifest
+from hip_fracture.data import Sample, check_image_format, class_counts, load_manifest, validate_classes, write_manifest
 
 
-def prepare(dataset: Path, output: Path) -> dict:
+def prepare(dataset: Path, output: Path, classes: list[str] | None = None) -> dict:
     if output.exists():
         raise FileExistsError(f"Refusing to overwrite preparation directory: {output}")
-    classes = ["Chest", "Pelvis"]
+    classes = ["Chest", "Pelvis"] if classes is None else classes
+    validate_classes(classes)
+    for label in classes:
+        if Path(label).name != label or label in {".", ".."}:
+            raise ValueError(f"Class must be an immediate folder name: {label}")
     retained: dict[str, Sample] = {}
     excluded = []
     original_counts = {}
@@ -64,6 +68,7 @@ def prepare(dataset: Path, output: Path) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=Path("Anatomy Dataset"))
+    parser.add_argument("--classes", nargs="+", default=["Chest", "Pelvis"])
     parser.add_argument("--output", type=Path, default=Path("data/anatomy"))
     args = parser.parse_args()
-    print(json.dumps(prepare(args.dataset, args.output), indent=2))
+    print(json.dumps(prepare(args.dataset, args.output, args.classes), indent=2))

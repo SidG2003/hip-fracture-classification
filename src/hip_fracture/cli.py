@@ -1,4 +1,4 @@
-"""Command-line entry points for the two-class research pilot."""
+"""Command-line entry points for image-classification research."""
 
 import argparse
 import json
@@ -9,11 +9,11 @@ from hip_fracture.training import TrainConfig, evaluate, predict, train
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Research-only two-class hip-fracture pilot.")
+    result = argparse.ArgumentParser(description="Research-only SKELEX image classifier.")
     commands = result.add_subparsers(dest="command", required=True)
     for name in ("validate", "split", "train"):
         command = commands.add_parser(name)
-        command.add_argument("--classes", nargs=2, required=True, metavar=("CLASS_0", "CLASS_1"))
+        command.add_argument("--classes", nargs="+", required=True, metavar="CLASS")
         if name == "train":
             command.add_argument("--train", type=Path, required=True)
             command.add_argument("--val", type=Path, required=True)

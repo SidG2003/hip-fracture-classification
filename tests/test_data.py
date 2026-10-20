@@ -45,7 +45,7 @@ class DataTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Duplicate"):
             load_manifest(self.manifest, self.classes)
         self.write(self.rows[::2])
-        with self.assertRaisesRegex(ValueError, "both pilot classes"):
+        with self.assertRaisesRegex(ValueError, "all configured classes"):
             load_manifest(self.manifest, self.classes)
 
     def test_corrupt_and_missing_files_raise(self):
