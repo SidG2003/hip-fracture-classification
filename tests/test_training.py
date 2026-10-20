@@ -1,8 +1,10 @@
 import csv
+from dataclasses import replace
 import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 from PIL import Image
@@ -96,6 +98,24 @@ class TrainingTests(unittest.TestCase):
         self.assertEqual(metrics["confusion_matrix_rows_true_columns_predicted"], [[2, 0], [0, 2]])
         with self.assertRaisesRegex(ValueError, "finite"):
             metrics_for(np.array([0]), np.array([[float("nan"), 1]]), self.classes)
+
+    def test_early_stopping_preserves_true_best_checkpoint(self):
+        config = replace(self.config, epochs=10, patience=2, min_delta=0.05)
+        losses = [1.0, 0.8, 0.79, 0.78]
+        results = [({"loss": loss, "macro_f1": 0.5}, np.empty((0, len(self.classes)))) for loss in losses]
+        with patch("hip_fracture.training.evaluate_loader", side_effect=results) as evaluator:
+            checkpoint = train(config)
+        self.assertEqual(evaluator.call_count, 4)
+        summary = json.loads((config.output / "summary.json").read_text())
+        self.assertTrue(summary["stopped_early"])
+        self.assertEqual(summary["epochs_completed"], 4)
+        self.assertEqual(summary["best_epoch"], 4)
+        self.assertEqual(torch.load(checkpoint, weights_only=True)["val_metrics"]["loss"], 0.78)
+
+    def test_early_stopping_invalid_settings_raise(self):
+        for settings in ({"patience": 0}, {"min_delta": -1}, {"min_delta": float("nan")}):
+            with self.subTest(settings=settings), self.assertRaisesRegex(ValueError, "Early-stopping"):
+                train(replace(self.config, **settings))
 
     def test_linear_head_can_overfit_separable_features(self):
         model = tiny_model()

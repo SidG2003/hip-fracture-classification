@@ -205,6 +205,23 @@ Checkpoints are for prediction/evaluation; optimizer-state resume is not
 implemented. Seeds make splits and CPU tests repeatable, but do not guarantee
 identical results across hardware/library versions.
 
+### Longer runs with early stopping
+
+Pass `--epochs 60 --patience 8 --min-delta 0.001` to set a 60-epoch maximum.
+Training stops after eight consecutive epochs without a validation-loss decrease
+exceeding 0.001 relative to the last meaningful improvement. Small improvements
+can accumulate until they cross that threshold. The checkpoint still records
+the absolute lowest validation loss, even if its improvement is smaller than
+`min_delta`. Early stopping is disabled when `--patience` is omitted, preserving
+the original fixed-epoch behavior.
+
+The run also writes `summary.json` with completed epochs, stopping status, and
+the best checkpoint epoch/loss. For a longer KAUH experiment, use the same
+training command with `--output runs/kauh-002-long --epochs 60 --patience 8
+--min-delta 0.001`. This starts a fresh seeded run, not an exact optimizer-state
+continuation. Preserve the first run and do not repeatedly inspect test results
+while selecting the epoch limit or other settings.
+
 ## Held-out evaluation
 
 Only evaluate the reserved test set once model choices are finalized. Do not use

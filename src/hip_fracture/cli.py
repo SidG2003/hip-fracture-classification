@@ -23,6 +23,8 @@ def parser() -> argparse.ArgumentParser:
             command.add_argument("--batch-size", type=int, default=4)
             command.add_argument("--lr", type=float, default=0.001)
             command.add_argument("--seed", type=int, default=2025)
+            command.add_argument("--patience", type=int, help="Stop after this many epochs without meaningful validation-loss improvement.")
+            command.add_argument("--min-delta", type=float, default=0.0, help="Required validation-loss decrease to reset early-stopping patience.")
             command.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default="auto")
         else:
             command.add_argument("--manifest", type=Path, required=True)
@@ -59,6 +61,7 @@ def main() -> None:
             train_manifest=args.train, val_manifest=args.val, model=args.model, output=args.output,
             classes=args.classes, epochs=args.epochs, batch_size=args.batch_size,
             learning_rate=args.lr, seed=args.seed, device=args.device,
+            patience=args.patience, min_delta=args.min_delta,
         ))
         print(f"Best validation checkpoint: {path}")
     elif args.command == "evaluate":

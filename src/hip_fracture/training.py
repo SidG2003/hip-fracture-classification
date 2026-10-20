@@ -33,6 +33,8 @@ class TrainConfig:
     learning_rate: float = 0.001
     seed: int = 2025
     device: str = "auto"
+    patience: int | None = None
+    min_delta: float = 0.0
 
 
 def select_device(name: str) -> torch.device:
@@ -134,6 +136,10 @@ def train(config: TrainConfig) -> Path:
         raise ValueError("Epochs and batch size must be positive.")
     if not math.isfinite(config.learning_rate) or config.learning_rate <= 0:
         raise ValueError("Learning rate must be finite and positive.")
+    if config.patience is not None and config.patience < 1:
+        raise ValueError("Early-stopping patience must be positive or omitted.")
+    if not math.isfinite(config.min_delta) or config.min_delta < 0:
+        raise ValueError("Early-stopping min_delta must be finite and non-negative.")
     if config.output.exists():
         raise FileExistsError(f"Refusing to overwrite run directory: {config.output}")
     random.seed(config.seed)
@@ -166,6 +172,10 @@ def train(config: TrainConfig) -> Path:
     save_json(config.output / "config.json", settings)
     history = []
     best_loss = float("inf")
+    best_epoch = 0
+    stopping_reference = float("inf")
+    stale_epochs = 0
+    stopped_early = False
     checkpoint_path = config.output / "best.pt"
     print(f"Device: {device}; training only {sum(p.numel() for p in model.head.parameters())} head parameters.", flush=True)
     for epoch in range(1, config.epochs + 1):
@@ -185,6 +195,7 @@ def train(config: TrainConfig) -> Path:
         save_json(config.output / "history.json", history)
         if metrics["loss"] < best_loss:
             best_loss = metrics["loss"]
+            best_epoch = epoch
             torch.save({
                 "format_version": 1,
                 "classes": config.classes,
@@ -198,6 +209,22 @@ def train(config: TrainConfig) -> Path:
                 "used_image_hashes": [s.digest for s in train_samples + val_samples],
             }, checkpoint_path)
         print(f"Epoch {epoch}/{config.epochs}: train_loss={history[-1]['train_loss']:.4f} val_loss={metrics['loss']:.4f} val_macro_f1={metrics['macro_f1']:.4f}", flush=True)
+        if metrics["loss"] < stopping_reference - config.min_delta:
+            stopping_reference = metrics["loss"]
+            stale_epochs = 0
+        else:
+            stale_epochs += 1
+        if config.patience is not None and stale_epochs >= config.patience:
+            stopped_early = True
+            print(f"Early stopping at epoch {epoch}: no improvement exceeding {config.min_delta} for {config.patience} epochs.", flush=True)
+            break
+    save_json(config.output / "summary.json", {
+        "epochs_completed": len(history),
+        "stopped_early": stopped_early,
+        "best_epoch": best_epoch,
+        "best_val_loss": best_loss,
+        "checkpoint": str(checkpoint_path.resolve()),
+    })
     return checkpoint_path
 
 
